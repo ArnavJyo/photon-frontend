@@ -1,0 +1,76 @@
+/* src/App.css */
+
+.dropzone {
+  border: 2px dashed #cccccc;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.task-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  height: 500px;
+  background-color: #666;
+  padding-right: 20px;
+}
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropbtn {
+  background-color: #666;
+  color: white;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border-color: grey;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #666;
+  min-width: 160px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.button-container {
+  display: flex;
+}
+
+.button {
+  background-color: #333;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  margin: 5px;
+  cursor: pointer;
+}
+
+.button:hover {
+  background-color: #555;
+}
+@media screen and (max-width: 768px) {
+  .task-bar {
+    align-items: center; /* Center items on smaller screens */
+  }
+
+  .dropbtn {
+    margin-bottom: 5px; /* Reduce margin for dropdown buttons */
+  }
+
+  .button {
+    margin: 2px; /* Reduce margin for regular buttons */
+  }
+}
