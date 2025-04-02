@@ -54,12 +54,13 @@ const PhotoUploader = () => {
       alert("Please select an image first");
       return;
     }
-
     setActiveFilter(filterName);
 
     const formData = new FormData();
     formData.append("image", selectedFile);
     formData.append("buttonText", filterName);
+    console.log("selectedFile type:", typeof selectedFile, selectedFile);
+
 
     if (filterName === "Blur") {
       formData.append("blurIntensity", blurIntensity);
@@ -72,7 +73,7 @@ const PhotoUploader = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/process-image", {
+      const response = await fetch("http://localhost:5001/process-image", {
         method: "POST",
         body: formData,
       });
@@ -162,9 +163,11 @@ const PhotoUploader = () => {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
 
-      if (processedImage) {
+      if (processedImage && typeof processedImage === 'string' && processedImage.startsWith('https://')) {
+        // processedImage is an S3 URL
         const processedImg = new Image();
-        processedImg.src = getImageDataUrl(processedImage);
+        processedImg.crossOrigin = "anonymous"; // Important for CORS
+        processedImg.src = processedImage;
 
         processedImg.onload = () => {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -172,17 +175,36 @@ const PhotoUploader = () => {
           const centerY = canvas.height / 2 - processedImg.height / 2;
           ctx.drawImage(processedImg, centerX, centerY);
         };
-      } else {
-        const resizedImage = await resizeImage(selectedFile);
-        const img = new Image();
-        img.src = URL.createObjectURL(resizedImage);
 
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          const centerX = canvas.width / 2 - img.width / 2;
-          const centerY = canvas.height / 2 - img.height / 2;
-          ctx.drawImage(img, centerX, centerY);
+        processedImg.onerror = (error) => {
+          console.error("Error loading processed image from S3:", error);
+          // Handle the error (e.g., display a fallback image)
         };
+      } else {
+        // processedImage is likely pixel data (from your getImageDataUrl)
+        // or selectedFile needs to be processed
+        if (processedImage) {
+          const processedImg = new Image();
+          processedImg.src = getImageDataUrl(processedImage);
+
+          processedImg.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const centerX = canvas.width / 2 - processedImg.width / 2;
+            const centerY = canvas.height / 2 - processedImg.height / 2;
+            ctx.drawImage(processedImg, centerX, centerY);
+          };
+        } else {
+          const resizedImage = await resizeImage(selectedFile);
+          const img = new Image();
+          img.src = URL.createObjectURL(resizedImage);
+
+          img.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const centerX = canvas.width / 2 - img.width / 2;
+            const centerY = canvas.height / 2 - img.height / 2;
+            ctx.drawImage(img, centerX, centerY);
+          };
+        }
       }
     }
   };
