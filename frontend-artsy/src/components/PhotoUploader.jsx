@@ -15,6 +15,35 @@ const PhotoUploader = () => {
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const [selection, setSelection] = useState(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+
+  useEffect(() => {
+    if (processedImage && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = processedImage;
+    }
+  }, [processedImage]);
+
+  // Helper function to convert canvas content to a File object
+  const canvasToFile = (canvas, filename = 'canvas-image.png') => {
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(new File([blob], filename, { type: 'image/png' }));
+      }, 'image/png');
+    });
+  };
 
   const handleFileDrop = (acceptedFiles) => {
     const file = acceptedFiles[0];
@@ -25,8 +54,14 @@ const PhotoUploader = () => {
     setHistory([]);
     setHistoryIndex(-1);
     setActiveFilter(null);
+
+    // Load the image into canvas
+    if (file) {
+      loadImageToCanvas(file);
+    }
   };
 
+  // Add to history using existing implementation
   const addToHistory = (imageData) => {
     // Remove any "future" history if we're not at the most recent state
     const newHistory = history.slice(0, historyIndex + 1);
@@ -35,33 +70,152 @@ const PhotoUploader = () => {
     setHistoryIndex(newHistory.length - 1);
   };
 
-  const handleUndo = () => {
+  // Handle undo - fixed implementation
+  const handleUndo = async () => {
     if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setProcessedImage(history[historyIndex - 1]);
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      const previousImageData = history[newIndex];
+      setProcessedImage(previousImageData);
+
+      // Update the canvas and create a new File from the canvas state
+      if (canvasRef.current && previousImageData) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const img = new Image();
+        img.onload = async () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          // Update selectedFile to match canvas state
+          const newFile = await canvasToFile(canvas);
+          setSelectedFile(newFile);
+        };
+        img.src = previousImageData;
+      }
     }
   };
 
-  const handleRedo = () => {
+  // Handle redo - fixed implementation
+  const handleRedo = async () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setProcessedImage(history[historyIndex + 1]);
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      const nextImageData = history[newIndex];
+      setProcessedImage(nextImageData);
+
+      // Also update canvas with the history state
+      if (canvasRef.current && nextImageData) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const img = new Image();
+        img.onload = async () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          // Update selectedFile to match canvas state
+          const newFile = await canvasToFile(canvas);
+          setSelectedFile(newFile);
+        };
+        img.src = nextImageData;
+      }
     }
   };
 
+  // Handle open button click
+  const handleOpenClick = () => {
+    fileInputRef.current.click();
+  };
+
+  // Handle file input change
+  const handleFileInputChange = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // Use the existing handleFileDrop implementation
+      handleFileDrop([e.target.files[0]]);
+    }
+  };
+
+  // Load image to canvas and save to history
+  const loadImageToCanvas = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        // Set maximum dimensions for display
+        const maxWidth = 800;
+        const maxHeight = 600;
+
+        // Calculate scaling ratio to maintain aspect ratio
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          const ratio = maxWidth / width;
+          width = maxWidth;
+          height = height * ratio;
+        }
+
+        if (height > maxHeight) {
+          const ratio = maxHeight / height;
+          height = maxHeight;
+          width = width * ratio;
+        }
+
+        // Adjust canvas size to these constrained dimensions
+        canvas.width = width;
+        canvas.height = height;
+
+        // Clear canvas and draw image with scaling
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to data URL and save initial state to history
+        const imageData = canvas.toDataURL('image/png');
+        setProcessedImage(imageData);
+        addToHistory(imageData);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Modified upload handler that always uses the current canvas state
   const handleUpload = async (filterName) => {
-    if (!selectedFile) {
-      alert("Please select an image first");
+    if (!canvasRef.current) {
+      alert("No image loaded");
       return;
     }
+
     setActiveFilter(filterName);
 
+    // Always get the current canvas state as a File
+    const canvas = canvasRef.current;
+    const currentImageFile = await canvasToFile(canvas);
+
     const formData = new FormData();
-    formData.append("image", selectedFile);
+    formData.append("image", currentImageFile);
     formData.append("buttonText", filterName);
-    console.log("selectedFile type:", typeof selectedFile, selectedFile);
 
+    if (selection) {
+      const selected = {
+        x: selection.startX,
+        y: selection.startY,
+        width: selection.width,
+        height: selection.height
+      };
+      formData.append("selection", JSON.stringify(selected));
+    }
 
+    // Add filter parameters as needed
     if (filterName === "Blur") {
       formData.append("blurIntensity", blurIntensity);
     }
@@ -120,94 +274,19 @@ const PhotoUploader = () => {
     return canvas.toDataURL("image/png");
   };
 
-  const resizeImage = (image) => {
-    return new Promise((resolve) => {
-      const maxSize = 500;
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-
-      const img = new Image();
-      img.src = URL.createObjectURL(image);
-
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxSize || height > maxSize) {
-          if (width > height) {
-            height = (maxSize / width) * height;
-            width = maxSize;
-          } else {
-            width = (maxSize / height) * width;
-            height = maxSize;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-            (blob) => {
-              resolve(new File([blob], "resized_image", { type: "image/png" }));
-            },
-            "image/png",
-            1
-        );
-      };
-    });
-  };
-
-  const drawImageOnCanvas = async () => {
-    if (canvasRef.current && selectedFile) {
+  useEffect(() => {
+    const drawSelectionBox = () => {
+      if (!canvasRef.current || !selection) return;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
 
-      if (processedImage && typeof processedImage === 'string' && processedImage.startsWith('https://')) {
-        // processedImage is an S3 URL
-        const processedImg = new Image();
-        processedImg.crossOrigin = "anonymous"; // Important for CORS
-        processedImg.src = processedImage;
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(selection.startX, selection.startY, selection.width, selection.height);
+    };
 
-        processedImg.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          const centerX = canvas.width / 2 - processedImg.width / 2;
-          const centerY = canvas.height / 2 - processedImg.height / 2;
-          ctx.drawImage(processedImg, centerX, centerY);
-        };
-
-        processedImg.onerror = (error) => {
-          console.error("Error loading processed image from S3:", error);
-          // Handle the error (e.g., display a fallback image)
-        };
-      } else {
-        // processedImage is likely pixel data (from your getImageDataUrl)
-        // or selectedFile needs to be processed
-        if (processedImage) {
-          const processedImg = new Image();
-          processedImg.src = getImageDataUrl(processedImage);
-
-          processedImg.onload = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const centerX = canvas.width / 2 - processedImg.width / 2;
-            const centerY = canvas.height / 2 - processedImg.height / 2;
-            ctx.drawImage(processedImg, centerX, centerY);
-          };
-        } else {
-          const resizedImage = await resizeImage(selectedFile);
-          const img = new Image();
-          img.src = URL.createObjectURL(resizedImage);
-
-          img.onload = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const centerX = canvas.width / 2 - img.width / 2;
-            const centerY = canvas.height / 2 - img.height / 2;
-            ctx.drawImage(img, centerX, centerY);
-          };
-        }
-      }
-    }
-  };
+    drawSelectionBox();
+  }, [selection]);
 
   const handleSaveImage = () => {
     if (canvasRef.current) {
@@ -217,18 +296,20 @@ const PhotoUploader = () => {
       link.click();
     }
   };
-
-  useEffect(() => {
-    drawImageOnCanvas();
-  }, [selectedFile, processedImage]);
-
   return (
       <div className="photo-editor">
+        <input
+            type="file"
+            ref={fileInputRef}
+            style={{display: 'none'}}
+            accept="image/*"
+            onChange={handleFileInputChange}
+        />
         {/* Header */}
         <header className="editor-header">
           <div className="logo">Photon</div>
           <div className="header-actions">
-            <Button variant="outline-primary" className="header-btn">
+            <Button variant="outline-primary" className="header-btn" onClick={handleOpenClick}>
               <FaUpload /> Open
             </Button>
             <Button variant="outline-success" className="header-btn" onClick={handleSaveImage} disabled={!selectedFile}>
@@ -272,11 +353,11 @@ const PhotoUploader = () => {
           <div className="canvas-container">
             {!selectedFile ? (
                 <Dropzone onDrop={handleFileDrop}>
-                  {({ getRootProps, getInputProps }) => (
+                  {({getRootProps, getInputProps}) => (
                       <div {...getRootProps()} className="dropzone">
                         <input {...getInputProps()} />
                         <div className="dropzone-content">
-                          <FaUpload size={40} />
+                          <FaUpload size={40}/>
                           <p>Drag & drop a photo here, or click to select one</p>
                         </div>
                       </div>
@@ -285,8 +366,11 @@ const PhotoUploader = () => {
             ) : (
                 <canvas
                     ref={canvasRef}
-                    width={800}
-                    height={600}
+                    width={1000}
+                    height={1000}
+                    // onMouseDown={handleMouseDown}
+                    // onMouseMove={handleMouseMove}
+                    // onMouseUp={handleMouseUp}
                     className="editor-canvas"
                 />
             )}
@@ -381,6 +465,24 @@ const PhotoUploader = () => {
                     onClick={() => handleUpload("Segment")}
                 >
                   Segment
+                </button>
+                <button
+                    className={`filter-btn ${activeFilter === "ASCII" ? "active" : ""}`}
+                    onClick={() => handleUpload("ASCII")}
+                >
+                  Ascii
+                </button>
+                <button
+                    className={`filter-btn ${activeFilter === "Voronoi" ? "active" : ""}`}
+                    onClick={() => handleUpload("Voronoi")}
+                >
+                  Voronoi
+                </button>
+                <button
+                    className={`filter-btn ${activeFilter === "Fractal Effect" ? "active" : ""}`}
+                    onClick={() => handleUpload("Fractal Effect")}
+                >
+                  Fractal Effect
                 </button>
                 <button
                     className={`filter-btn ${activeFilter === "RemoveBG" ? "active" : ""}`}
